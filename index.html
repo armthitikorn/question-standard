@@ -129,6 +129,7 @@
         window.supabase = createClient(supabaseUrl, supabaseKey);
         
         const FILTER_TAGS = ['Health', 'all']; 
+        // 💥 ใช้ URL สำหรับการตอบว่า "ไม่เคย" (No Answer URL) เป็นค่าตั้งต้น แต่เราจะไม่ใช้มันในตรรกะ playH อีกต่อไป
         const NO_ANSWER_URL = "https://wzwyotzzxycqfwercakh.supabase.co/storage/v1/object/public/responses/part1/P1Q3/health5_P1_P1Q3_1762340907852.webm"; 
 
         // Variables
@@ -159,7 +160,7 @@
                     "ใน 5 ปีที่ผ่านมา ท่านเคยได้รับการบาดเจ็บ เจ็บป่วย จนท่านต้องเข้ารักษาตัวในโรงพยาบาลเกิน 5 วันหรือไม่"
                 ];
                 
-                // ตรวจสอบข้อมูล yes_trigger_url จาก Supabase (ใช้ตรรกะเดิม)
+                // ตรวจสอบข้อมูล yes_trigger_url จาก Supabase เพื่อใช้เป็นคำตอบ 'เคย'
                 selectedDisease = (s4||[]).find(q => q.is_yes_trigger) || {name: 'โรคทั่วไป', yes_trigger_url: NO_ANSWER_URL};
                 
                 const { data: s4n } = await window.supabase.from('s4_follow_up_names').select('*').overlaps('product_type', FILTER_TAGS).order('step_index');
@@ -180,8 +181,9 @@
         };
 
         const preloadCriticalAudio = () => {
+             // โหลดเฉพาะ audio ที่จำเป็น รวมถึง selectedDisease.yes_trigger_url
              const urls = [...globalS1Files, ...globalS2Files, ...globalS3Files, ...globalS4FollowUpReplies, ...globalS5Steps].map(f => f.audio_url || f.customer_audio_url);
-             urls.push(NO_ANSWER_URL, selectedDisease.yes_trigger_url);
+             urls.push(selectedDisease.yes_trigger_url); 
              urls.forEach(u => { if(u) new Audio(u).load(); });
         };
 
@@ -271,24 +273,22 @@
         };
         window.initSection4 = () => { hideAll(); document.getElementById('section4Div').style.display='block'; currentHIndex=0; updateHUI(); window.answerHBtn.disabled=false; };
         
-        // 💥 [การแก้ไข]: ปรับตรรกะ playH สำหรับคำถามเดียว
+        // 💥 [การแก้ไข]: ปรับตรรกะ playH ให้ตอบ "เคย" เสมอ และเข้า Follow-up ทันที
         window.playH = () => {
             // คำถามหลักคือ Q1 เสมอ (currentHIndex ต้องเป็น 0 เพื่อเริ่ม)
             const isYesTrigger = (currentHIndex === 0); 
-            const url = isYesTrigger ? selectedDisease.yes_trigger_url : NO_ANSWER_URL;
+            // 💥 บังคับใช้ selectedDisease.yes_trigger_url เพื่อให้ลูกค้าตอบ "เคย" เสมอ
+            const url = selectedDisease.yes_trigger_url;
             
             playAudio(url, window.hStatusElement, () => {
-                if(isYesTrigger) {
+                // ตรรกะนี้จะเข้าเงื่อนไข if เสมอ เพราะเราบังคับให้ลูกค้าตอบ 'เคย' (isYesTrigger = true)
+                if(isYesTrigger) { 
                     isFollowUpMode = true; followUpStep=1; updateHUI();
                     window.answerHBtn.textContent = "🎙️ ซักประวัติ";
                     window.answerHBtn.onclick = () => toggleRecording(7);
-                } else {
-                    // ถ้าตอบ 'ไม่' ให้จบ Section 4 ทันที
-                    currentHIndex = maxH; // ทำให้ currentHIndex เท่ากับ maxH (ซึ่งคือ 1) เพื่อจบ
-                    window.nextSection5Btn.disabled = false;
-                    window.answerHBtn.disabled = true;
-                    window.hStatusElement.textContent = "✅ จบช่วงที่ 4";
-                }
+                } 
+                // 💥 ลบเงื่อนไข 'else' ที่ทำให้จบ Section 4 เมื่อลูกค้าตอบ 'ไม่เคย' ออก
+                
                 window.answerHBtn.disabled=false;
             });
             window.answerHBtn.disabled = true;
