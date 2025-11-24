@@ -121,7 +121,7 @@
 
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-        import { v4 as uuidv4 } from 'https://cdn.jsdelivr.net/npm/uuid@8.3.2/dist/esm-browser/index.js';
+        import { v4 as uuidv4 } from 'https://cdn.jsdelivr.com/npm/uuid@8.3.2/dist/esm-browser/index.js';
 
         // Config
         const supabaseUrl = 'https://wzwyotzzxycqfwercakh.supabase.co';
@@ -153,8 +153,16 @@
                 const { data: s3 } = await window.supabase.from('objections_s3').select('*').overlaps('product_type', FILTER_TAGS).order('ob_index');
                 globalS3Files = s3 || [];
                 const { data: s4 } = await window.supabase.from('health_questions_s4').select('*').overlaps('product_type', FILTER_TAGS).order('q_index');
-                globalS4Questions = (s4||[]).map(q => q.q_text);
+                
+                // 💥 ส่วนที่ 3: กำหนดคำถามสุขภาพเพียงข้อเดียวตามที่ร้องขอ
+                // เราจะกำหนดคำถามแบบ Hardcode เพื่อความแน่นอน แต่ยังคงใช้ตรรกะการตอบกลับจาก Supabase
+                globalS4Questions = [
+                    "ใน 5 ปีที่ผ่านมา ท่านเคยได้รับการบาดเจ็บ เจ็บป่วย จนท่านต้องเข้ารักษาตัวในโรงพยาบาลเกิน 5 วันหรือไม่"
+                ];
+                
+                // ตรวจสอบข้อมูล yes_trigger_url จาก Supabase (ใช้ตรรกะเดิม)
                 selectedDisease = (s4||[]).find(q => q.is_yes_trigger) || {name: 'โรคทั่วไป', yes_trigger_url: NO_ANSWER_URL};
+                
                 const { data: s4n } = await window.supabase.from('s4_follow_up_names').select('*').overlaps('product_type', FILTER_TAGS).order('step_index');
                 globalS4FollowUpNames = s4n || [];
                 const { data: s4r } = await window.supabase.from('s4_follow_up_replies').select('*').overlaps('product_type', FILTER_TAGS).order('step_index');
@@ -184,7 +192,12 @@
             const cfg = globalConfig[diff];
             if(!cfg) return alert("ไม่พบ Config ความยากนี้");
             
-            maxTurns=cfg.S1; maxQ=cfg.S2; maxC=cfg.S3; maxH=cfg.S4; maxA=cfg.S5; maxFollowUp=globalS4FollowUpNames.length;
+            maxTurns=cfg.S1; maxQ=cfg.S2; maxC=cfg.S3; 
+            
+            // 💥 ส่วนที่ 1: ปรับ maxH ให้เป็น 1
+            maxH = 1; 
+            
+            maxA=cfg.S5; maxFollowUp=globalS4FollowUpNames.length;
             
             // Prepare S1
             const pool = globalS1Files.filter(f => !f.is_finale);
@@ -257,39 +270,59 @@
             playAudio(url, window.s3StatusElement, () => { window.replyBtn.disabled=false; });
             lastCustomerAudioUrl = url;
         };
-        window.initSection4 = () => { hideAll(); document.getElementById('section4Div').style.display='block'; currentHIndex=0; updateHUI(); window.answerHBtn.disabled=false; };
+        window.initSection4 = () => { 
+            hideAll(); 
+            document.getElementById('section4Div').style.display='block'; 
+            currentHIndex=0; 
+            updateHUI(); 
+            window.answerHBtn.disabled=false; 
+            // 💥 เมื่อเข้า Section 4 จะเล่นเสียงคำถามสุขภาพทันที (คำถามเดียว)
+            window.answerHBtn.textContent = "🎙️ ถามคำถามสุขภาพ";
+        };
+        
+        // 💥 ส่วนที่ 2: ปรับปรุงตรรกะ playH (คำถามสุขภาพ)
         window.playH = () => {
-            const isYesTrigger = (currentHIndex === 3); 
+            // คำถามหลักของเราคือ Q1 เสมอ (currentHIndex = 0)
+            const isYesTrigger = (currentHIndex === 0); 
             const url = isYesTrigger ? selectedDisease.yes_trigger_url : NO_ANSWER_URL;
+            
             playAudio(url, window.hStatusElement, () => {
                 if(isYesTrigger) {
+                    // ถ้าตอบ 'ใช่' ให้เข้าโหมด Follow-up
                     isFollowUpMode = true; followUpStep=1; updateHUI();
                     window.answerHBtn.textContent = "🎙️ ซักประวัติ";
-                    window.answerHBtn.onclick = () => toggleRecording(7);
+                    window.answerHBtn.onclick = () => toggleRecording(7); // ใช้ type 7 สำหรับ Follow-up
                 } else {
-                    currentHIndex++; 
-                    if(currentHIndex >= maxH) window.nextSection5Btn.disabled=false;
-                    else updateHUI();
+                    // ถ้าตอบ 'ไม่' (หรือไม่มี Follow-up แล้ว) ให้จบ Section 4 ทันที
+                    currentHIndex = maxH; // ทำให้ currentHIndex เท่ากับ maxH (ซึ่งคือ 1) เพื่อจบ
+                    window.nextSection5Btn.disabled = false;
+                    window.answerHBtn.disabled = true;
+                    window.hStatusElement.textContent = "✅ จบช่วงที่ 4";
                 }
                 window.answerHBtn.disabled=false;
             });
             window.answerHBtn.disabled = true;
         };
+        
         window.playFollowUp = () => {
             const url = globalS4FollowUpReplies[followUpStep-1]?.customer_audio_url;
             playAudio(url, window.hStatusElement, () => {
                 followUpStep++;
                 if(followUpStep > maxFollowUp) {
-                    isFollowUpMode=false; currentHIndex++;
+                    // จบ Follow-up แล้ว ให้จบ Section 4 ทันที
+                    isFollowUpMode=false; 
+                    currentHIndex = maxH; // ทำให้ currentHIndex เท่ากับ maxH (ซึ่งคือ 1) เพื่อจบ
                     window.answerHBtn.textContent = "🎙️ ถามคำถามสุขภาพ";
-                    window.answerHBtn.onclick = () => toggleRecording(5);
-                    if(currentHIndex >= maxH) window.nextSection5Btn.disabled=false;
-                    else updateHUI();
+                    window.answerHBtn.onclick = () => toggleRecording(5); // เปลี่ยนกลับเป็น type 5
+                    window.nextSection5Btn.disabled=false;
+                    window.answerHBtn.disabled = true;
+                    window.hStatusElement.textContent = "✅ จบช่วงที่ 4";
                 } else { updateHUI(); }
                 window.answerHBtn.disabled=false;
             });
             window.answerHBtn.disabled = true;
         };
+        
         window.initSection5 = () => { hideAll(); document.getElementById('section5Div').style.display='block'; aRound=1; renderRegSteps(); window.answerABtn.disabled=false; };
         window.playReg = () => {
             const url = globalS5Steps[aRound-1]?.customer_audio_url;
@@ -306,13 +339,13 @@
             let btn, nextAction;
             if(type===1) { btn=window.recordBtn; nextAction=endTurn; }
             if(type===8) { btn=window.pitchRecordBtn; nextAction=()=>{window.nextSection2Btn.disabled=false}; }
-            
-            // ✅ ปรับตรงนี้: เมื่อตอบ S2 เสร็จ (Type 2) ให้เรียก playQ ทันทีเพื่อเล่นข้อถัดไปอัตโนมัติ
             if(type===2) { btn=window.answerBtn; nextAction=playQ; } 
-            
             if(type===3) { btn=window.closeBtn; nextAction=playObj; }
             if(type===4) { btn=window.replyBtn; nextAction=playObj; }
-            if(type===5) { btn=window.answerHBtn; nextAction=playH; }
+            
+            // 💥 ถ้าเป็น type 5 (คำถามสุขภาพหลัก)
+            if(type===5) { btn=window.answerHBtn; nextAction=playH; } 
+            
             if(type===7) { btn=window.answerHBtn; nextAction=playFollowUp; }
             if(type===6) { btn=window.answerABtn; nextAction=playReg; }
 
@@ -327,7 +360,6 @@
                         const blob = new Blob(chunks, {type:'audio/webm'});
                         allRecordings.push({blob, type, url: lastCustomerAudioUrl});
                         
-                        // หยุดบันทึกเสร็จ -> รอ 500ms -> รัน action ถัดไป (เช่น เล่นเสียงลูกค้าอัตโนมัติ)
                         btn.textContent = "🎙️ บันทึก"; 
                         setTimeout(nextAction, 500);
                     };
@@ -360,8 +392,10 @@
         const hideAll = () => ['section1Div','section1_5Div','section2Div','section3Div','section4Div','section5Div'].forEach(id=>document.getElementById(id).style.display='none');
         const updateHUI = () => {
             const d = document.getElementById('healthQuestionDisplay');
+            // 💥 HUI จะแสดงคำถามหลัก (index 0) หากยังไม่จบ Section 4
             if(isFollowUpMode) d.innerHTML = `<b>ซักประวัติ:</b> ${globalS4FollowUpNames[followUpStep-1]?.step_name}`;
-            else d.innerHTML = `<b>คำถามหลัก:</b> ${globalS4Questions[currentHIndex]}`;
+            else d.innerHTML = `<b>คำถามหลัก:</b> ${globalS4Questions[0]}`;
+            // ไม่ต้องอัพเดท hQName/maxH เพราะเรามีคำถามเดียว
         };
         const renderRegSteps = () => {
             const ol = document.getElementById('stepList'); ol.innerHTML='';
@@ -395,7 +429,8 @@
             window.closeBtn.onclick = () => toggleRecording(3);
             window.replyBtn.onclick = () => toggleRecording(4);
             document.getElementById('nextSection4Btn').onclick = initSection4;
-            window.answerHBtn.onclick = () => toggleRecording(5);
+            // 💥 ให้ answerHBtn.onclick เรียก toggleRecording(5) โดยตรง (ถ้าอยู่ในโหมด Follow-up จะเปลี่ยนใน playH/playFollowUp)
+            window.answerHBtn.onclick = () => toggleRecording(5); 
             document.getElementById('nextSection5Btn').onclick = initSection5;
             window.answerABtn.onclick = () => toggleRecording(6);
             window.finalSaveBtn.onclick = saveAllRecordings;
@@ -422,48 +457,5 @@
         };
         document.addEventListener('DOMContentLoaded', init);
     </script>
-</body>
-</html>
-
-<script>
-function playHealthResponse() {
-    const responses = ['health-yes.wav', 'health-no.wav'];
-    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-    playAudio(randomResponse);
-}
-</script>
-</head>
-<body>
-    <h1>ระบบ E-Simulator Roleplay (Index1)</h1>
-
-    <section>
-        <h2>ช่วงที่ 1: เปิดตัว</h2>
-        <button onclick="showQuestion('intro')">แสดงคำถาม</button>
-        <button class="play-btn" onclick="playAudio('intro.wav')">▶️ เล่นเสียงลูกค้า</button>
-    </section>
-
-    <section>
-        <h2>ช่วงที่ 2: Pitch</h2>
-        <button onclick="showQuestion('pitch')">แสดงคำถาม</button>
-        <button class="play-btn" onclick="playAudio('pitch.wav')">▶️ เล่นเสียงลูกค้า</button>
-    </section>
-
-    <section>
-        <h2>ช่วงที่ 3: ตอบคำถาม (10 ข้อ)</h2>
-        <button onclick="showQuestion('qa')">แสดงคำถามถัดไป</button>
-        <button class="play-btn" onclick="playAudio('qa-' + currentQAIndex + '.wav')">▶️ เล่นเสียงลูกค้า</button>
-    </section>
-
-    <section>
-        <h2>ช่วงที่ 4: สุขภาพ (เหลือ 1 ข้อ)</h2>
-        <button onclick="showQuestion('health')">แสดงคำถามสุขภาพ</button>
-        <button class="play-btn" onclick="playAudio('health.wav')">▶️ เล่นเสียงคำถาม</button>
-    </section>
-
-    <section>
-        <h2>ช่วงที่ 5: ลงทะเบียนลูกค้า</h2>
-        <button onclick="showQuestion('register')">แสดงคำถาม</button>
-        <button class="play-btn" onclick="playAudio('register.wav')">▶️ เล่นเสียงลูกค้า</button>
-    </section>
 </body>
 </html>
