@@ -509,27 +509,60 @@
     </script>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const sections = ['start', 'section1', 'section1_5', 'section2', 'section3', 'section4', 'section5', 'certificate'];
-    let currentIndex = 0;
+let isRecording = false;
+let mediaRecorder;
+let audioChunks = [];
 
-    function showSection(index) {
-        sections.forEach((id, i) => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = (i === index) ? 'block' : 'none';
-        });
+async function toggleRecording() {
+    if (!isRecording) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = audioUrl;
+            document.body.appendChild(audio);
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+    } else {
+        mediaRecorder.stop();
+        isRecording = false;
     }
+}
 
-    const btnMap = {
-        'startBtn': 1,
-        'next1': 2,
-        'next1_5': 3,
-        'next2': 4,
-        'next3': 5,
-        'next4': 6,
-        'finish': 7
-    };
+// ลำดับการแสดงผล
+const sections = ['start', 'section1', 'section1_5', 'section2', 'section3', 'section4', 'section5', 'certificate'];
+let currentIndex = 0;
 
+function showSection(index) {
+    sections.forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (i === index) ? 'block' : 'none';
+    });
+}
+
+const btnMap = {
+    'startBtn': 1,
+    'next1': 2,
+    'next1_5': 3,
+    'next2': 4,
+    'next3': 5,
+    'next4': 6,
+    'finish': 7
+};
+
+window.onload = function() {
+    showSection(0);
     Object.keys(btnMap).forEach(btnId => {
         const btn = document.getElementById(btnId);
         if (btn) {
@@ -539,49 +572,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     });
-
-    showSection(0);
-
-    // ฟังก์ชันบันทึกเสียง
-    let isRecording = false;
-    let mediaRecorder;
-    let audioChunks = [];
-
-    async function toggleRecording() {
-        if (!isRecording) {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = document.createElement('audio');
-                audio.controls = true;
-                audio.src = audioUrl;
-                document.body.appendChild(audio);
-            };
-
-            mediaRecorder.start();
-            isRecording = true;
-        } else {
-            mediaRecorder.stop();
-            isRecording = false;
-        }
-    }
-
-    // ผูกปุ่มบันทึกเสียงทุกช่วง
-    ['recordBtn1','recordBtn1_5','recordBtn2','recordBtn3','recordBtn4','recordBtn5'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.addEventListener('click', toggleRecording);
-        }
-    });
-});
+};
 </script>
 
 </body>
