@@ -510,7 +510,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // เก็บ ID ของแต่ละส่วนตามลำดับ
     const sections = ['start', 'section1', 'section1_5', 'section2', 'section3', 'section4', 'section5', 'certificate'];
     let currentIndex = 0;
 
@@ -521,7 +520,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ผูก event กับปุ่ม
     const btnMap = {
         'startBtn': 1,
         'next1': 2,
@@ -542,8 +540,47 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // เริ่มต้นแสดงเฉพาะ start
     showSection(0);
+
+    // ฟังก์ชันบันทึกเสียง
+    let isRecording = false;
+    let mediaRecorder;
+    let audioChunks = [];
+
+    async function toggleRecording() {
+        if (!isRecording) {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.src = audioUrl;
+                document.body.appendChild(audio);
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+        }
+    }
+
+    // ผูกปุ่มบันทึกเสียงทุกช่วง
+    ['recordBtn1','recordBtn1_5','recordBtn2','recordBtn3','recordBtn4','recordBtn5'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.addEventListener('click', toggleRecording);
+        }
+    });
 });
 </script>
 
